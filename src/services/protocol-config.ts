@@ -46,10 +46,11 @@ const CACHE_MS = 2_000;
 async function getSetting(key: string): Promise<string | null> {
   try {
     const row = await prisma.protocolSetting.findUnique({ where: { key } });
-    return row?.value ?? null;
+    if (row?.value) return row.value;
   } catch {
-    return null;
+    /* fall through to env */
   }
+  return envFallbackForProtocolKey(key);
 }
 
 async function getSettingMeta(
@@ -57,13 +58,30 @@ async function getSettingMeta(
 ): Promise<{ value: string | null; updatedAt: string | null }> {
   try {
     const row = await prisma.protocolSetting.findUnique({ where: { key } });
-    return {
-      value: row?.value ?? null,
-      updatedAt: row?.updatedAt?.toISOString() ?? null,
-    };
+    if (row?.value) {
+      return {
+        value: row.value,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      };
+    }
   } catch {
-    return { value: null, updatedAt: null };
+    /* fall through */
   }
+  const fallback = envFallbackForProtocolKey(key);
+  return { value: fallback, updatedAt: null };
+}
+
+function envFallbackForProtocolKey(key: string): string | null {
+  const map: Record<string, string> = {
+    [PROTOCOL_KEYS.contractAddress]: "PROTOCOL_CONTRACT_ADDRESS",
+    [PROTOCOL_KEYS.feeWallet]: "PROTOCOL_FEE_WALLET",
+    [PROTOCOL_KEYS.xAccount]: "PROTOCOL_X_ACCOUNT",
+    [PROTOCOL_KEYS.maintenance]: "PROTOCOL_MAINTENANCE",
+  };
+  const envKey = map[key];
+  if (!envKey) return null;
+  const v = process.env[envKey]?.trim();
+  return v && v.length > 0 ? v : null;
 }
 
 export function sanitizeXHandle(input: string): string {
@@ -147,6 +165,8 @@ async function upsertSetting(
   value: string,
   description?: string,
 ): Promise<void> {
+  const { ensureDatabase } = await import("@/lib/db");
+  await ensureDatabase();
   await prisma.protocolSetting.upsert({
     where: { key },
     create: { key, value, description },
