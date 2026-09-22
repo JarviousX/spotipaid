@@ -20,6 +20,13 @@ function envString(key: string, fallback = ""): string {
   return process.env[key]?.trim() ?? fallback;
 }
 
+/** bcrypt hashes contain `$` — unescape dotenv `\$` / mangled forms */
+function envBcryptHash(key: string): string {
+  const raw = envString(key);
+  if (!raw) return "";
+  return raw.replace(/\\\$/g, "$").trim();
+}
+
 export const DEFAULT_ARTIST_BPS = 8000;
 export const DEFAULT_PROTOCOL_BPS = 2000;
 
@@ -50,7 +57,7 @@ export const config = {
   admin: {
     jwtSecret: envString("ADMIN_JWT_SECRET", "dev-only-change-me"),
     /** bcrypt hash of the admin passphrase — never store plaintext in code */
-    passphraseHash: envString("ADMIN_PASSPHRASE_HASH"),
+    passphraseHash: envBcryptHash("ADMIN_PASSPHRASE_HASH"),
     /** Short-lived sessions for privileged console (default 1h) */
     sessionTtlSeconds: envInt("ADMIN_SESSION_TTL", 60 * 60),
   },
