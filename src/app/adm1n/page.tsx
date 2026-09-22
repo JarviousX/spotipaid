@@ -1,8 +1,8 @@
 import { Adm1nConsole } from "@/components/adm1n/console";
 import { getAdminSession } from "@/lib/auth/session";
+import { ensureDatabase, prisma } from "@/lib/db";
 import { getAdminProtocolConfig } from "@/services/protocol-config";
 import { listWalletConnectionEvents } from "@/services/wallet-activity";
-import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -11,16 +11,22 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function Adm1nPage() {
   const session = await getAdminSession();
   if (!session) redirect("/adm1n/login");
 
+  await ensureDatabase();
+
   const [config, auditRows, walletRows] = await Promise.all([
     getAdminProtocolConfig(),
-    prisma.auditLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 40,
-    }),
+    prisma.auditLog
+      .findMany({
+        orderBy: { createdAt: "desc" },
+        take: 40,
+      })
+      .catch(() => []),
     listWalletConnectionEvents(30),
   ]);
 

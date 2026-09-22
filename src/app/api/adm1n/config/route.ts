@@ -17,6 +17,8 @@ import {
 export async function GET() {
   try {
     await requireAdminSession("settings:write");
+    const { ensureDatabase } = await import("@/lib/db");
+    await ensureDatabase();
     const config = await getAdminProtocolConfig();
     return jsonOk({ config });
   } catch (err) {
@@ -50,6 +52,9 @@ export async function PATCH(request: Request) {
   try {
     const session = await requireAdminSession("settings:write");
     assertCsrf(request, await getCsrfCookie());
+
+    const { ensureDatabase } = await import("@/lib/db");
+    await ensureDatabase();
 
     const body = patchSchema.parse(await request.json());
     const ip = clientIp(request);

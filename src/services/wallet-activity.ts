@@ -29,10 +29,14 @@ export async function listWalletConnectionEvents(
   ).walletConnectionEvent;
 
   if (delegate?.findMany) {
-    return delegate.findMany({
-      orderBy: { createdAt: "desc" },
-      take,
-    });
+    try {
+      return await delegate.findMany({
+        orderBy: { createdAt: "desc" },
+        take,
+      });
+    } catch {
+      return [];
+    }
   }
 
   try {
