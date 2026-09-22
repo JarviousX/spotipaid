@@ -44,13 +44,17 @@ let maintenanceCache: { value: boolean; at: number } | null = null;
 const CACHE_MS = 2_000;
 
 async function getSetting(key: string): Promise<string | null> {
+  // Prefer durable env on Vercel so every serverless instance agrees (avoids CA flicker).
+  const fromEnv = envFallbackForProtocolKey(key);
+  if (fromEnv) return fromEnv;
+
   try {
     const row = await prisma.protocolSetting.findUnique({ where: { key } });
     if (row?.value) return row.value;
   } catch {
-    /* fall through to env */
+    /* ignore */
   }
-  return envFallbackForProtocolKey(key);
+  return null;
 }
 
 async function getSettingMeta(

@@ -235,14 +235,15 @@ export function LaunchWizard({
         if (typeof data.launchFeeSol === "number") {
           setLaunchFeeSol(data.launchFeeSol);
         }
-        setFeeWallet(data.feeWallet ?? null);
+        // Keep last known fee wallet — cold instances may briefly return null.
+        if (data.feeWallet) setFeeWallet(data.feeWallet);
       } catch {
         /* ignore */
       }
     }
 
     void pullQuote();
-    const timer = window.setInterval(() => void pullQuote(), 8_000);
+    const timer = window.setInterval(() => void pullQuote(), 30_000);
     const onFocus = () => void pullQuote();
     window.addEventListener("focus", onFocus);
     return () => {
