@@ -1,0 +1,466 @@
+// SpotiPaid — production Prisma schema (SQLite for demo)
+// Spotify / provider IDs live in ProviderIdentifier, never as primary keys.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums (SQLite stores as String; documented here for clarity) ───────────
+// ClaimState: UNCLAIMED | CLAIM_SUBMITTED | UNDER_REVIEW | VERIFIED | REJECTED | SUSPENDED
+// MusicItemType: TRACK | ALBUM | ARTIST | PLAYLIST | OTHER
+// ProviderName: SPOTIFY | APPLE_MUSIC | DEMO | OTHER
+// TokenStatus: ACTIVE | DISABLED | HIDDEN | MALICIOUS
+// FeeClaimStatus: PENDING | PROCESSED | FAILED | REVERSED
+// PayoutStatus: PENDING | SUBMITTED | CONFIRMED | FAILED | CANCELLED
+// AdminRole: SUPER_ADMIN | MODERATOR | FINANCE | READONLY
+// TradeSide: BUY | SELL
+// IntegrationEventStatus: PENDING | PROCESSED | FAILED | SKIPPED
+
+model User {
+  id             String   @id @default(cuid())
+  displayName    String?
+  email          String?  @unique
+  avatarUrl      String?
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  wallets        Wallet[]
+  artistClaims   ArtistClaim[]
+  auditLogs      AuditLog[]    @relation("AuditActor")
+
+  @@map("users")
+}
+
+model Wallet {
+  id           String   @id @default(cuid())
+  userId       String?
+  address      String
+  chain        String   @default("solana")
+  label        String?
+  isPrimary    Boolean  @default(false)
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payouts      Payout[]
+
+  @@unique([chain, address])
+  @@index([userId])
+  @@map("wallets")
+}
+
+model Artist {
+  id                    String   @id @default(cuid())
+  displayName           String
+  slug                  String   @unique
+  bio                   String?
+  imageUrl              String?
+  /// Claim lifecycle for this artist identity
+  claimState            String   @default("UNCLAIMED")
+  /// Soft flag: suspected impersonation
+  flaggedImpersonation  Boolean  @default(false)
+  /// Soft flag: malicious or abusive metadata
+  flaggedMaliciousMeta  Boolean  @default(false)
+  verifiedAt            DateTime?
+  isDemo                Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  claims                ArtistClaim[]
+  musicItemArtists      MusicItemArtist[]
+  providerIdentifiers   ProviderIdentifier[]
+  tokenAllocations      TokenArtistAllocation[]
+  balances              ArtistBalance[]
+  payoutItems           PayoutItem[]
+
+  @@index([claimState])
+  @@map("artists")
+}
+
+model ArtistClaim {
+  id              String   @id @default(cuid())
+  artistId        String
+  userId          String?
+  /// ClaimState enum string
+  status          String   @default("CLAIM_SUBMITTED")
+  evidenceUrl     String?
+  evidenceNotes   String?
+  reviewerNotes   String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  isDemo          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  artist          Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([artistId, status])
+  @@index([userId])
+  @@map("artist_claims")
+}
+
+model MusicItem {
+  id                   String   @id @default(cuid())
+  /// TRACK | ALBUM | ARTIST | PLAYLIST | OTHER
+  type                 String
+  title                String
+  subtitle             String?
+  imageUrl             String?
+  durationMs           Int?
+  releaseDate          String?
+  /// Soft flag: exclude from discovery / launchpad surfaces
+  discoveryDisabled    Boolean  @default(false)
+  /// Soft flag: malicious metadata
+  flaggedMaliciousMeta Boolean  @default(false)
+  isDemo               Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  artists              MusicItemArtist[]
+  providerIdentifiers  ProviderIdentifier[]
+  tokens               Token[]
+
+  @@index([type])
+  @@index([discoveryDisabled])
+  @@map("music_items")
+}
+
+/// Many-to-many with role + share basis points for attribution
+model MusicItemArtist {
+  id           String   @id @default(cuid())
+  musicItemId  String
+  artistId     String
+  role         String   @default("PRIMARY")
+  /// Share of music-item attribution in basis points (sum should be 10000)
+  shareBps     Int      @default(10000)
+  position     Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  musicItem    MusicItem @relation(fields: [musicItemId], references: [id], onDelete: Cascade)
+  artist       Artist    @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([musicItemId, artistId, role])
+  @@index([artistId])
+  @@map("music_item_artists")
+}
+
+/// External IDs (Spotify, Apple Music, etc.) — never used as PKs
+model ProviderIdentifier {
+  id           String   @id @default(cuid())
+  /// SPOTIFY | APPLE_MUSIC | DEMO | OTHER
+  provider     String
+  /// track | album | artist | playlist | etc.
+  entityType   String
+  externalId   String
+  artistId     String?
+  musicItemId  String?
+  rawPayload   String?
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  artist       Artist?    @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  musicItem    MusicItem? @relation(fields: [musicItemId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, entityType, externalId])
+  @@index([artistId])
+  @@index([musicItemId])
+  @@map("provider_identifiers")
+}
+
+model Token {
+  id                   String   @id @default(cuid())
+  mint                 String   @unique
+  chain                String   @default("solana")
+  symbol               String
+  name                 String
+  decimals             Int      @default(6)
+  imageUrl             String?
+  musicItemId          String?
+  /// Attribution version for mint → music → artist mapping
+  attributionVersion   Int      @default(1)
+  /// ACTIVE | DISABLED | HIDDEN | MALICIOUS
+  status               String   @default("ACTIVE")
+  discoveryDisabled    Boolean  @default(false)
+  flaggedMaliciousMeta Boolean  @default(false)
+  launchpadSlug        String?
+  isDemo               Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  musicItem            MusicItem? @relation(fields: [musicItemId], references: [id], onDelete: SetNull)
+  artistAllocations    TokenArtistAllocation[]
+  feeClaims            FeeClaim[]
+  trades               Trade[]
+
+  @@index([musicItemId])
+  @@index([status])
+  @@index([discoveryDisabled])
+  @@map("tokens")
+}
+
+/// Per-token artist fee allocation (basis points of the artist share)
+model TokenArtistAllocation {
+  id           String   @id @default(cuid())
+  tokenId      String
+  artistId     String
+  /// Share of the artist fee bucket in bps (sum should be 10000)
+  shareBps     Int      @default(10000)
+  /// Attribution version this allocation belongs to
+  attributionVersion Int @default(1)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  token        Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  artist       Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenId, artistId, attributionVersion])
+  @@index([artistId])
+  @@map("token_artist_allocations")
+}
+
+model FeeConfig {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  /// Artist share of gross fee in basis points (e.g. 8000 = 80%)
+  artistBps    Int      @default(8000)
+  /// Protocol share of gross fee in basis points
+  protocolBps  Int      @default(2000)
+  isDefault    Boolean  @default(false)
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("fee_configs")
+}
+
+model FeeClaim {
+  id               String   @id @default(cuid())
+  idempotencyKey   String   @unique
+  tokenId          String?
+  mint             String
+  /// Gross fee amount as decimal string
+  grossAmount      String
+  artistBps        Int
+  protocolBps      Int
+  /// Artist obligation amount (decimal string)
+  artistAmount     String
+  /// Protocol obligation amount (decimal string)
+  protocolAmount   String
+  /// PENDING | PROCESSED | FAILED | REVERSED
+  status           String   @default("PROCESSED")
+  sourceTxSig      String?
+  processedAt      DateTime?
+  isDemo           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  token            Token?   @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  artistBalances   ArtistBalance[]
+  protocolBalances ProtocolBalance[]
+  payoutItems      PayoutItem[]
+
+  @@index([mint])
+  @@index([status])
+  @@index([createdAt])
+  @@map("fee_claims")
+}
+
+/// Artist obligation / balance ledger entry from a fee claim
+model ArtistBalance {
+  id            String   @id @default(cuid())
+  artistId      String
+  feeClaimId    String?
+  /// Decimal string — positive = credit obligation
+  amount        String
+  /// AVAILABLE | RESERVED | PAID | REVERSED
+  status        String   @default("AVAILABLE")
+  currency      String   @default("USDC")
+  payoutItemId  String?
+  isDemo        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  artist        Artist    @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  feeClaim      FeeClaim? @relation(fields: [feeClaimId], references: [id], onDelete: SetNull)
+
+  @@unique([feeClaimId, artistId])
+  @@index([artistId, status])
+  @@map("artist_balances")
+}
+
+model ProtocolBalance {
+  id          String   @id @default(cuid())
+  feeClaimId  String?
+  amount      String
+  /// AVAILABLE | RESERVED | SWEPT | REVERSED
+  status      String   @default("AVAILABLE")
+  currency    String   @default("USDC")
+  isDemo      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  feeClaim    FeeClaim? @relation(fields: [feeClaimId], references: [id], onDelete: SetNull)
+
+  @@unique([feeClaimId])
+  @@index([status])
+  @@map("protocol_balances")
+}
+
+model Payout {
+  id              String   @id @default(cuid())
+  walletId        String?
+  destinationAddr String
+  chain           String   @default("solana")
+  /// Total payout amount as decimal string
+  totalAmount     String
+  currency        String   @default("USDC")
+  /// PENDING | SUBMITTED | CONFIRMED | FAILED | CANCELLED
+  status          String   @default("PENDING")
+  /// Idempotency / duplicate prevention key
+  idempotencyKey  String   @unique
+  txSignature     String?
+  isDemo          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wallet          Wallet?     @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  items           PayoutItem[]
+
+  @@index([status])
+  @@index([destinationAddr])
+  @@map("payouts")
+}
+
+model PayoutItem {
+  id              String   @id @default(cuid())
+  payoutId        String
+  artistId        String?
+  feeClaimId      String?
+  amount          String
+  createdAt       DateTime @default(now())
+
+  payout          Payout    @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  artist          Artist?   @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  feeClaim        FeeClaim? @relation(fields: [feeClaimId], references: [id], onDelete: SetNull)
+
+  @@unique([payoutId, feeClaimId, artistId])
+  @@index([artistId])
+  @@map("payout_items")
+}
+
+model Trade {
+  id          String   @id @default(cuid())
+  tokenId     String?
+  mint        String
+  /// BUY | SELL
+  side        String
+  priceUsd    String
+  amountToken String
+  amountUsd   String
+  txSignature String?  @unique
+  traderAddr  String?
+  tradedAt    DateTime @default(now())
+  isDemo      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  token       Token?   @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+
+  @@index([mint, tradedAt])
+  @@index([tradedAt])
+  @@map("trades")
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  /// SUPER_ADMIN | MODERATOR | FINANCE | READONLY
+  role         String   @default("READONLY")
+  displayName  String?
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs    AuditLog[] @relation("AdminAuditActor")
+
+  @@map("admin_users")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  action       String
+  entityType   String?
+  entityId     String?
+  actorUserId  String?
+  actorAdminId String?
+  metadata     String?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  actorUser    User?      @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAdmin   AdminUser? @relation("AdminAuditActor", fields: [actorAdminId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model IntegrationEvent {
+  id            String   @id @default(cuid())
+  source        String
+  eventType     String
+  externalId    String?
+  /// Dedup key for webhook / poller ingestion
+  idempotencyKey String  @unique
+  payload       String?
+  /// PENDING | PROCESSED | FAILED | SKIPPED
+  status        String   @default("PENDING")
+  errorMessage  String?
+  processedAt   DateTime?
+  isDemo        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([source, eventType])
+  @@index([status])
+  @@map("integration_events")
+}
+
+/// Public wallet connection / session events (no secrets). Retention: ops/security.
+model WalletConnectionEvent {
+  id          String   @id @default(cuid())
+  address     String
+  chain       String   @default("solana")
+  network     String?
+  event       String
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([address, createdAt])
+  @@index([event, createdAt])
+  @@map("wallet_connection_events")
+}
+
+model ProtocolSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  description String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("protocol_settings")
+}
