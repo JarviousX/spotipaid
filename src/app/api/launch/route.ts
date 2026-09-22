@@ -14,6 +14,9 @@ import {
 } from "@/services/launch";
 import { assertNotMaintenance } from "@/services/protocol-config";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const bodySchema = z.object({
   symbol: z.string().trim().min(2).max(12),
   name: z.string().trim().min(1).max(80),
@@ -33,7 +36,11 @@ export async function GET() {
   try {
     await assertNotMaintenance();
     const quote = await getLaunchQuote();
-    return jsonOk(quote);
+    return jsonOk(quote, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate",
+      },
+    });
   } catch (err) {
     return handleRouteError(err);
   }

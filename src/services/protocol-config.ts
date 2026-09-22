@@ -117,6 +117,27 @@ export function invalidateMaintenanceCache(): void {
   maintenanceCache = null;
 }
 
+/** Drop in-memory protocol caches so adm1n writes show on public pages immediately. */
+export function invalidateProtocolCaches(): void {
+  maintenanceCache = null;
+}
+
+/**
+ * Canonical launch-fee destination: adm1n fee wallet (DB), then PROTOCOL_FEE_WALLET env.
+ * Always call this at payment/verify time — never trust a client-supplied address.
+ */
+export async function requireLaunchFeeWallet(): Promise<string> {
+  const { ensureDatabase } = await import("@/lib/db");
+  await ensureDatabase();
+  const fee = await getSetting(PROTOCOL_KEYS.feeWallet);
+  if (!fee) {
+    throw new ProtocolConfigError(
+      "Fee wallet is not configured. Set it in /adm1n before launching.",
+    );
+  }
+  return validateSolanaAddress(fee);
+}
+
 export async function getPublicProtocolConfig(): Promise<ProtocolPublicConfig> {
   const [ca, fee, x, maint] = await Promise.all([
     getSetting(PROTOCOL_KEYS.contractAddress),
@@ -205,6 +226,7 @@ export async function updateContractAddress(input: {
     address,
     "Official protocol contract / token mint (CA)",
   );
+  invalidateProtocolCaches();
   await writeAuditLog({
     action: "protocol.contract_address.update",
     entityType: "ProtocolSetting",
@@ -242,6 +264,7 @@ export async function updateFeeWallet(input: {
   );
   // Keep treasury.address in sync for legacy settings UI
   await upsertSetting("treasury.address", address, "Fee / treasury wallet");
+  invalidateProtocolCaches();
   await writeAuditLog({
     action: "protocol.fee_wallet.update",
     entityType: "ProtocolSetting",
@@ -272,6 +295,7 @@ export async function updateXAccount(input: {
     handle,
     "Official X (Twitter) handle",
   );
+  invalidateProtocolCaches();
   await writeAuditLog({
     action: "protocol.x_account.update",
     entityType: "ProtocolSetting",
@@ -308,7 +332,7 @@ export async function updateMaintenanceMode(input: {
     next,
     "Emergency maintenance freeze",
   );
-  invalidateMaintenanceCache();
+  invalidateProtocolCaches();
   await setMaintenanceCookie(input.enabled);
   await writeAuditLog({
     action: "protocol.maintenance.update",

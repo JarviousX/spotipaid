@@ -10,7 +10,7 @@ import { getMusicProvider } from "@/providers/music";
 import { getConfig, DEFAULT_ARTIST_BPS, DEFAULT_PROTOCOL_BPS } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
-import { getPublicProtocolConfig } from "@/services/protocol-config";
+import { getPublicProtocolConfig, requireLaunchFeeWallet } from "@/services/protocol-config";
 import type {
   DemoToken,
   MusicAlbumMeta,
@@ -75,10 +75,16 @@ export async function getLaunchQuote(): Promise<{
   artistBps: number;
   protocolBps: number;
 }> {
-  const protocol = await getPublicProtocolConfig();
   const fees = getConfig().fees;
+  let feeWallet: string | null = null;
+  try {
+    feeWallet = await requireLaunchFeeWallet();
+  } catch {
+    const protocol = await getPublicProtocolConfig();
+    feeWallet = protocol.feeWallet;
+  }
   return {
-    feeWallet: protocol.feeWallet,
+    feeWallet,
     launchFeeSol: fees.launchFeeSol,
     launchFeeLamports: launchFeeLamports(),
     artistBps: fees.artistBps,
@@ -361,7 +367,6 @@ export async function registerToken(
 ): Promise<RegisteredToken & { paymentSignature?: string }> {
   const parsed = registerSchema.parse(input);
   const feeConfig = await getProtocolFeeConfig();
-  const protocol = await getPublicProtocolConfig();
 
   // Never trust client fee amounts — server owns splits
   const artistBps = feeConfig.artistBps;
@@ -369,9 +374,15 @@ export async function registerToken(
 
   const authMode = parsed.authMode ?? "wallet";
   if (authMode === "wallet") {
-    if (!protocol.feeWallet) {
+    // Always resolve fee wallet server-side — never trust the client destination.
+    let feeWallet: string;
+    try {
+      feeWallet = await requireLaunchFeeWallet();
+    } catch (err) {
       throw new LaunchError(
-        "Protocol fee wallet is not configured. Set it in /adm1n before launching.",
+        err instanceof Error
+          ? err.message
+          : "Fee wallet is not configured in /adm1n.",
       );
     }
     if (!parsed.walletAddress || !parsed.paymentSignature) {
@@ -383,7 +394,7 @@ export async function registerToken(
       signature: parsed.paymentSignature,
       fromWallet: parsed.walletAddress,
       expectedLamports: launchFeeLamports(),
-      feeWallet: protocol.feeWallet,
+      feeWallet,
     });
   }
 

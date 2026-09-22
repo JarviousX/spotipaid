@@ -3,7 +3,7 @@
 import { cn } from "@/lib/cn";
 import { truncateAddress } from "@/lib/utils";
 import { Check, Copy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type PublicProtocol = {
   contractAddress: string | null;
@@ -21,20 +21,29 @@ export function PublicCaChip({
   const [ca, setCa] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/protocol/public")
+  const refresh = useCallback(() => {
+    void fetch("/api/protocol/public", { cache: "no-store" })
       .then((r) => r.json())
       .then((data: PublicProtocol) => {
-        if (!cancelled) setCa(data.contractAddress ?? null);
+        setCa(data.contractAddress ?? null);
       })
       .catch(() => {
         /* ignore */
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(refresh, 5_000);
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [refresh]);
 
   if (!ca) return null;
 

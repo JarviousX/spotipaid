@@ -223,25 +223,32 @@ export function LaunchWizard({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/launch")
-      .then((r) => r.json())
-      .then(
-        (data: {
+
+    async function pullQuote() {
+      try {
+        const r = await fetch("/api/launch", { cache: "no-store" });
+        const data = (await r.json()) as {
           feeWallet?: string | null;
           launchFeeSol?: number;
-        }) => {
-          if (cancelled) return;
-          if (typeof data.launchFeeSol === "number") {
-            setLaunchFeeSol(data.launchFeeSol);
-          }
-          setFeeWallet(data.feeWallet ?? null);
-        },
-      )
-      .catch(() => {
+        };
+        if (cancelled) return;
+        if (typeof data.launchFeeSol === "number") {
+          setLaunchFeeSol(data.launchFeeSol);
+        }
+        setFeeWallet(data.feeWallet ?? null);
+      } catch {
         /* ignore */
-      });
+      }
+    }
+
+    void pullQuote();
+    const timer = window.setInterval(() => void pullQuote(), 8_000);
+    const onFocus = () => void pullQuote();
+    window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -403,19 +410,41 @@ export function LaunchWizard({
       let paymentSignature: string | undefined;
 
       if (authMode === "wallet") {
-        if (!publicKey || !feeWallet) {
+        // Fresh fee wallet from server right before signing — always adm1n treasury.
+        const quoteRes = await fetch("/api/launch", { cache: "no-store" });
+        const quote = (await quoteRes.json()) as {
+          feeWallet?: string | null;
+          launchFeeSol?: number;
+          error?: string;
+        };
+        if (!quoteRes.ok) {
+          throw new Error(quote.error ?? "Could not load launch fee quote.");
+        }
+        const liveFeeWallet = quote.feeWallet ?? null;
+        if (typeof quote.launchFeeSol === "number") {
+          setLaunchFeeSol(quote.launchFeeSol);
+        }
+        setFeeWallet(liveFeeWallet);
+
+        if (!publicKey || !liveFeeWallet) {
           throw new Error(
-            feeWallet
+            liveFeeWallet
               ? "Connect a wallet to pay the launch fee."
               : "Fee wallet is not configured in /adm1n.",
           );
         }
 
+        const lamports = Math.round(
+          (typeof quote.launchFeeSol === "number"
+            ? quote.launchFeeSol
+            : launchFeeSol) * LAMPORTS_PER_SOL,
+        );
+
         const tx = new Transaction().add(
           SystemProgram.transfer({
             fromPubkey: publicKey,
-            toPubkey: new PublicKey(feeWallet),
-            lamports: launchFeeLamports,
+            toPubkey: new PublicKey(liveFeeWallet),
+            lamports,
           }),
         );
         const { blockhash, lastValidBlockHeight } =

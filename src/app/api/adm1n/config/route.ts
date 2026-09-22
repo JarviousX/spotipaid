@@ -13,6 +13,9 @@ import {
   updateMaintenanceMode,
   updateXAccount,
 } from "@/services/protocol-config";
+import { revalidatePath } from "next/cache";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -96,7 +99,20 @@ export async function PATCH(request: Request) {
         config = await getAdminProtocolConfig();
     }
 
-    return jsonOk({ config });
+    // Push config into live pages immediately (CA chip, launch quote, shell).
+    revalidatePath("/", "layout");
+    revalidatePath("/launch");
+    revalidatePath("/docs");
+    revalidatePath("/disclosures");
+
+    return jsonOk(
+      { config, liveAt: Date.now() },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0, must-revalidate",
+        },
+      },
+    );
   } catch (err) {
     return handleRouteError(err);
   }
