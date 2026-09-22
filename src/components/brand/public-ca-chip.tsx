@@ -99,6 +99,7 @@ export function PublicCaChip({
   if (!ca) return null;
 
   async function copy() {
+    if (!ca) return;
     try {
       await navigator.clipboard.writeText(ca);
       setCopied(true);
