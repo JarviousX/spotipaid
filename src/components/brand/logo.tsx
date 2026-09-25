@@ -9,7 +9,7 @@ export interface LogoProps {
   href?: string | null;
 }
 
-/** Brand mark from /public/logo.png — already transparent */
+/** Brand mark from /public/logo.png */
 function Mark({ className }: { className?: string }) {
   return (
     <Image
