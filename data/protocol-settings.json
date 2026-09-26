@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-26T21:42:14.913Z",
+  "updatedAt": "2026-09-26T21:43:55.282Z",
   "settings": {
     "protocol.contract_address": {
-      "value": "coming-soon",
-      "updatedAt": "2026-09-26T21:42:14.913Z"
+      "value": "coming-soon-very-soon",
+      "updatedAt": "2026-09-26T21:43:55.282Z"
     },
     "protocol.x_account": {
       "value": "spotipaidx",
