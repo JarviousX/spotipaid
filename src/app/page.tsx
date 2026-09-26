@@ -1,5 +1,6 @@
 import { BentoDashboard } from "@/components/home/bento-dashboard";
 import { LivePayoutChip } from "@/components/home/live-payout-chip";
+import { PublicCaChip } from "@/components/brand/public-ca-chip";
 import { getConfig } from "@/lib/config";
 import {
   getProtocolStats,
@@ -114,6 +115,10 @@ export default async function Home() {
           >
             Read the docs
           </Link>
+        </div>
+
+        <div className="mt-6 flex justify-center">
+          <PublicCaChip size="lg" />
         </div>
       </section>
 

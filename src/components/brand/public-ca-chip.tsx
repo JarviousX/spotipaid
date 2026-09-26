@@ -31,9 +31,12 @@ function writeStoredCa(value: string) {
 export function PublicCaChip({
   className,
   compact = false,
+  size = "sm",
 }: {
   className?: string;
   compact?: boolean;
+  /** `lg` = hero CA under home CTAs */
+  size?: "sm" | "lg";
 }) {
   const [ca, setCa] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -41,7 +44,6 @@ export function PublicCaChip({
   const pendingHitsRef = useRef(0);
 
   const applyCa = useCallback((next: string | null | undefined) => {
-    // Never clear a known CA because a cold serverless instance returned null.
     if (!next) return;
 
     setCa((prev) => {
@@ -52,7 +54,6 @@ export function PublicCaChip({
         return prev;
       }
 
-      // Require the same new value twice so flapping instances don't thrash the UI.
       if (pendingRef.current === next) {
         pendingHitsRef.current += 1;
       } else {
@@ -109,24 +110,52 @@ export function PublicCaChip({
     }
   }
 
+  const isLg = size === "lg";
+
   return (
     <button
       type="button"
       onClick={copy}
       title={ca}
+      aria-label={`Copy contract address ${ca}`}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-[#2a2a2a] bg-[#111] px-2.5 py-1 font-mono text-[10px] text-[#9a9a9a] transition-colors hover:border-accent/40 hover:text-accent",
+        "inline-flex items-center border font-mono transition-colors hover:border-accent/40 hover:text-accent",
+        isLg
+          ? "gap-3 rounded-2xl border-accent/25 bg-accent/10 px-5 py-3.5 text-sm text-accent sm:gap-4 sm:px-7 sm:py-4 sm:text-base"
+          : "gap-1.5 rounded-full border-[#2a2a2a] bg-[#111] px-2.5 py-1 text-[10px] text-[#9a9a9a]",
         className,
       )}
     >
-      <span className="text-[#5a5a5a]">CA</span>
-      <span className="text-white">
-        {compact ? truncateAddress(ca, 3) : truncateAddress(ca, 4)}
+      <span
+        className={cn(
+          "font-semibold uppercase tracking-[0.14em]",
+          isLg ? "text-accent/70" : "text-[#5a5a5a]",
+        )}
+      >
+        CA
+      </span>
+      <span
+        className={cn(
+          "text-white",
+          isLg && "font-semibold tracking-tight sm:text-lg",
+        )}
+      >
+        {isLg
+          ? truncateAddress(ca, 6)
+          : compact
+            ? truncateAddress(ca, 3)
+            : truncateAddress(ca, 4)}
       </span>
       {copied ? (
-        <Check className="size-3 text-accent" aria-hidden />
+        <Check
+          className={cn(isLg ? "size-5 text-accent" : "size-3 text-accent")}
+          aria-hidden
+        />
       ) : (
-        <Copy className="size-3" aria-hidden />
+        <Copy
+          className={cn(isLg ? "size-5 text-accent/80" : "size-3")}
+          aria-hidden
+        />
       )}
     </button>
   );
