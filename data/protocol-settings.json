@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-26T21:45:00.135Z",
+  "updatedAt": "2026-09-26T21:51:17.747Z",
   "settings": {
     "protocol.contract_address": {
-      "value": "3kyAmExgEfmYdvyPEsbu3sjASNJnzRhWqM3w7F6rpump",
-      "updatedAt": "2026-09-26T21:45:00.135Z"
+      "value": "EuHAm5US1HeRxyU6vxW1oXc7NovhFqmFmNVhQLVXpump",
+      "updatedAt": "2026-09-26T21:51:17.747Z"
     },
     "protocol.x_account": {
       "value": "tryspotipaid",
